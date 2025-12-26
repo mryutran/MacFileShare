@@ -1,6 +1,6 @@
 # 🍎 Mac File Share
 
-**Chia sẻ file dễ dàng từ Mac sang iPhone qua WiFi**
+**Chia sẻ file dễ dàng giữa các thiết bị qua WiFi - Mac, iPhone, Android, Windows, Linux**
 
 ---
 
@@ -17,7 +17,7 @@
 
 ## 🎯 Giới thiệu
 
-Mac File Share là công cụ đơn giản giúp bạn chia sẻ file giữa Mac và iPhone thông qua mạng WiFi nội bộ. Không cần cài đặt app, không cần AirDrop, chỉ cần mở trình duyệt Safari trên iPhone!
+WiFi File Share là công cụ đơn giản giúp bạn chia sẻ file giữa các thiết bị thông qua mạng WiFi nội bộ. Không cần cài đặt app, không cần AirDrop, chỉ cần copy URL từ terminal và paste vào trình duyệt web trên bất kỳ thiết bị nào!
 
 ---
 
@@ -40,7 +40,7 @@ macOS bảo vệ một số thư mục như Downloads, Documents, Desktop. Để
 3. Nhấn **+** và thêm **Terminal** (hoặc iTerm nếu bạn dùng)
 4. **Khởi động lại Terminal**
 
-> 💡 **Mẹo**: Nếu không muốn cấp quyền, bạn có thể dùng thư mục `~/Public/ShareFiles` thay thế.
+> 💡 **Khuyến nghị**: Dùng `~/Public/ShareFiles` để không cần cấp quyền Full Disk Access
 
 ### Bước 2: Tải về
 
@@ -53,63 +53,37 @@ cd ~/MacFileShare
 
 ## 💻 Sử dụng
 
-### Cách 1: Dùng script khởi động (Khuyến nghị)
-
 ```bash
-# Chia sẻ thư mục Downloads (mặc định)
-./start.sh
+# Chia sẻ thư mục Public (không cần cấp quyền - khuyến nghị)
+python3 server.py ~/Public/ShareFiles
 
-# Chia sẻ thư mục tùy chọn
-./start.sh ~/Documents
-
-# Chia sẻ với port tùy chọn
-./start.sh ~/Downloads 9999
-```
-
-### Cách 2: Chạy trực tiếp Python
-
-```bash
 # Chia sẻ thư mục Downloads
-python3 server.py
-
-# Chia sẻ thư mục tùy chọn
-python3 server.py ~/Documents
+python3 server.py ~/Downloads
 
 # Chia sẻ với port tùy chọn
 python3 server.py ~/Pictures 9000
 ```
 
-### Cách 3: Dùng thư mục Public (Không cần cấp quyền)
-
-```bash
-# Tạo thư mục chia sẻ
-mkdir -p ~/Public/ShareFiles
-
-# Copy file cần chia sẻ vào đó
-cp ~/Downloads/file.zip ~/Public/ShareFiles/
-
-# Chạy server
-python3 server.py ~/Public/ShareFiles
-```
-
 ---
 
-## 📱 Truy cập từ iPhone
+## 📱 Truy cập từ bất kỳ thiết bị nào
 
-1. **Đảm bảo** Mac và iPhone cùng kết nối **một mạng WiFi**
+1. **Đảm bảo** máy Mac và thiết bị đích cùng kết nối **một mạng WiFi**
 
-2. **Mở Safari** trên iPhone
+2. **Mở trình duyệt web** trên thiết bị đích (Safari, Chrome, Firefox, Edge...)
 
-3. **Nhập địa chỉ** hiển thị trên Terminal, ví dụ:
-   ```
-   http://192.168.1.152:8888
-   ```
+3. **Copy URL từ terminal** và paste vào trình duyệt
 
-4. **Hoặc quét mã QR** hiển thị trên trang web
+4. **Tải file**: Nhấn vào file bất kỳ để download về thiết bị
 
-5. **Tải file**: Nhấn vào file bất kỳ để download về iPhone
+5. **Upload file**: Cuộn xuống cuối trang, chọn file và nhấn Upload
 
-6. **Upload file**: Cuộn xuống cuối trang, chọn file và nhấn Upload
+**✅ Hỗ trợ tất cả thiết bị:**
+- 📱 iPhone / iPad
+- 🤖 Android phones / tablets
+- 💻 Windows PC / Laptop
+- 🐧 Linux PC / Laptop
+- 🍎 Mac khác
 
 ---
 
@@ -161,18 +135,15 @@ lsof -ti :8888 | xargs kill -9
 
 ---
 
-### ❌ Trang web hiển thị "Không hoạt động"
+### ❌ Upload file không hoạt động
+
+**Nguyên nhân**: Lỗi phân tích dữ liệu multipart hoặc quyền truy cập file
 
 **Giải pháp**:
-1. Kiểm tra Terminal xem có lỗi không
-2. Thử restart server:
-   ```bash
-   # Dừng server cũ
-   Ctrl + C
-   
-   # Chạy lại
-   python3 server.py ~/Downloads
-   ```
+1. Kiểm tra Terminal xem có lỗi khi upload không
+2. Đảm bảo thư mục chia sẻ có quyền ghi
+3. Thử upload file nhỏ trước (dưới 10MB)
+4. Kiểm tra firewall không chặn kết nối
 
 ---
 
@@ -181,15 +152,23 @@ lsof -ti :8888 | xargs kill -9
 | Tính năng | Mô tả |
 |-----------|-------|
 | 📥 **Download** | Tải file từ Mac về iPhone |
-| 📤 **Upload** | Tải file từ iPhone lên Mac |
+| 📤 **Upload** | Tải file từ iPhone lên Mac *(Đã cải thiện)* |
 | 📁 **Duyệt thư mục** | Xem và mở các thư mục con |
-| 📱 **QR Code** | Quét nhanh để truy cập |
 | 🎨 **Giao diện đẹp** | Tối ưu cho mobile, dark theme |
 | 🔍 **Icon thông minh** | Hiển thị icon theo loại file |
 
 ---
 
 ## 📝 Ví dụ sử dụng
+
+### Chia sẻ thư mục Public (Khuyến nghị - không cần cấp quyền)
+```bash
+# Tạo thư mục chia sẻ
+mkdir -p ~/Public/ShareFiles
+
+# Chạy server
+python3 server.py ~/Public/ShareFiles
+```
 
 ### Chia sẻ thư mục Downloads
 ```bash
@@ -236,4 +215,5 @@ Nếu gặp vấn đề, hãy kiểm tra:
 
 ---
 
-**Made with ❤️ by AI Assistant**
+**Made with ❤️ by Phong Tran**  
+📧 [mr.yutran@gmail.com](mailto:mr.yutran@gmail.com)

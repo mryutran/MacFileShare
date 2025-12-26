@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-🍎 Mac File Share - Chia sẻ file từ Mac sang iPhone
-Tạo bởi AI Assistant
+🍎 Mac File Share - Share files across devices
+Made with ❤️ by Phong Tran
+Email: mr.yutran@gmail.com
 """
 
 import http.server
@@ -91,12 +92,6 @@ def get_file_icon(filename):
     }
     return icons.get(ext, '📄')
 
-def generate_qr_svg(url):
-    """Tạo QR code đơn giản bằng SVG (không cần thư viện ngoài)"""
-    # Sử dụng API online để tạo QR code
-    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={urllib.parse.quote(url)}"
-    return f'<img src="{qr_url}" alt="QR Code" class="qr-code" />'
-
 class FileShareHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=SHARE_DIR, **kwargs)
@@ -121,61 +116,96 @@ class FileShareHandler(http.server.SimpleHTTPRequestHandler):
             # Download file
             super().do_GET()
         else:
-            self.send_error(404, "File không tồn tại")
+            self.send_error(404, "File not found")
     
     def do_POST(self):
-        """Xử lý upload file từ iPhone"""
-        content_type = self.headers.get('Content-Type', '')
-        
-        if 'multipart/form-data' in content_type:
-            # Parse boundary
-            boundary = content_type.split('boundary=')[1].encode()
+        """Handle file upload from any device"""
+        try:
+            content_type = self.headers.get('Content-Type', '')
             
-            # Đọc content
-            content_length = int(self.headers['Content-Length'])
-            body = self.rfile.read(content_length)
-            
-            # Parse multipart data
-            parts = body.split(b'--' + boundary)
-            
-            for part in parts:
-                if b'filename="' in part:
-                    # Lấy tên file
-                    header_end = part.find(b'\r\n\r\n')
-                    header = part[:header_end].decode('utf-8', errors='ignore')
-                    
-                    filename_start = header.find('filename="') + 10
-                    filename_end = header.find('"', filename_start)
-                    filename = header[filename_start:filename_end]
-                    
-                    if filename:
-                        # Lấy nội dung file
-                        file_content = part[header_end + 4:]
-                        if file_content.endswith(b'\r\n'):
-                            file_content = file_content[:-2]
+            if 'multipart/form-data' in content_type:
+                # Parse boundary more robustly
+                if 'boundary=' not in content_type:
+                    self.send_error(400, "Invalid multipart data")
+                    return
+                
+                boundary = content_type.split('boundary=')[1]
+                if boundary.startswith('"') and boundary.endswith('"'):
+                    boundary = boundary[1:-1]
+                boundary = boundary.encode('utf-8')
+                
+                # Read content
+                content_length = int(self.headers['Content-Length'])
+                body = self.rfile.read(content_length)
+                
+                # Parse multipart data more robustly
+                parts = body.split(b'--' + boundary)
+                
+                files_uploaded = 0
+                for part in parts:
+                    if b'Content-Disposition: form-data; name="file"' in part:
+                        # Find filename
+                        filename = None
+                        lines = part.split(b'\r\n')
+                        for line in lines:
+                            line_str = line.decode('utf-8', errors='ignore')
+                            if 'filename="' in line_str:
+                                filename_start = line_str.find('filename="') + 10
+                                filename_end = line_str.find('"', filename_start)
+                                if filename_end > filename_start:
+                                    filename = line_str[filename_start:filename_end]
+                                break
                         
-                        # Lưu file
-                        save_path = os.path.join(SHARE_DIR, filename)
-                        with open(save_path, 'wb') as f:
-                            f.write(file_content)
-                        
-                        print(f"📥 Đã nhận file: {filename}")
-            
-            # Redirect về trang chủ
-            self.send_response(303)
-            self.send_header('Location', '/')
-            self.end_headers()
-        else:
-            self.send_error(400, "Bad Request")
+                        if filename:
+                            # Find start position of file content
+                            header_end = part.find(b'\r\n\r\n')
+                            if header_end != -1:
+                                file_content = part[header_end + 4:]
+                                # Remove trailing \r\n if present
+                                if file_content.endswith(b'\r\n'):
+                                    file_content = file_content[:-2]
+                                
+                                # Sanitize filename
+                                filename = os.path.basename(filename)  # Prevent directory traversal
+                                
+                                # Save file
+                                save_path = os.path.join(SHARE_DIR, filename)
+                                try:
+                                    with open(save_path, 'wb') as f:
+                                        f.write(file_content)
+                                    print(f"📥 Received file: {filename} ({len(file_content)} bytes)")
+                                    files_uploaded += 1
+                                except PermissionError:
+                                    print(f"❌ Cannot save file: {filename} (no permission)")
+                                    self.send_error(403, f"Cannot save file: {filename}")
+                                    return
+                                except Exception as e:
+                                    print(f"❌ Error saving file: {filename} ({e})")
+                                    self.send_error(500, f"Error saving file: {filename}")
+                                    return
+                
+                if files_uploaded > 0:
+                    print(f"✅ Upload successful: {files_uploaded} file(s)")
+                    # Redirect to home page
+                    self.send_response(303)
+                    self.send_header('Location', '/')
+                    self.end_headers()
+                else:
+                    self.send_error(400, "No files found to upload")
+            else:
+                self.send_error(400, "Invalid request")
+        except Exception as e:
+            print(f"❌ Upload error: {e}")
+            self.send_error(500, "Server error during upload")
     
     def send_directory_listing(self, path):
-        """Gửi trang HTML hiển thị danh sách file"""
+        """Send HTML page displaying file list"""
         full_path = os.path.join(SHARE_DIR, path.lstrip('/'))
         
         try:
             entries = os.listdir(full_path)
         except OSError:
-            self.send_error(404, "Không thể đọc thư mục")
+            self.send_error(404, "Cannot read directory")
             return
         
         # Sắp xếp: thư mục trước, rồi đến file
@@ -297,25 +327,6 @@ class FileShareHandler(http.server.SimpleHTTPRequestHandler):
             font-weight: 600;
         }}
         
-        .qr-section {{
-            margin-top: 20px;
-            padding: 20px;
-            background: white;
-            border-radius: 16px;
-            display: inline-block;
-        }}
-        
-        .qr-code {{
-            width: 150px;
-            height: 150px;
-        }}
-        
-        .qr-label {{
-            margin-top: 10px;
-            font-size: 0.85em;
-            color: #333;
-        }}
-        
         /* Breadcrumb */
         .breadcrumb {{
             display: flex;
@@ -338,6 +349,12 @@ class FileShareHandler(http.server.SimpleHTTPRequestHandler):
         
         .breadcrumb a:hover {{
             text-shadow: 0 0 10px var(--accent-glow);
+        }}
+        
+        .breadcrumb .current-path {{
+            color: var(--text-primary);
+            font-weight: 600;
+            text-decoration: none;
         }}
         
         .breadcrumb span {{
@@ -558,11 +575,6 @@ class FileShareHandler(http.server.SimpleHTTPRequestHandler):
                 padding: 8px 14px;
                 font-size: 0.8em;
             }}
-            
-            .qr-code {{
-                width: 120px;
-                height: 120px;
-            }}
         }}
     </style>
 </head>
@@ -570,22 +582,16 @@ class FileShareHandler(http.server.SimpleHTTPRequestHandler):
     <div class="container">
         <header class="header">
             <h1>🍎 Mac File Share</h1>
-            <p>Chia sẻ file dễ dàng từ Mac sang iPhone</p>
+            <p>Chia sẻ file dễ dàng giữa các thiết bị qua WiFi</p>
             
             <div class="server-info">
-                <p>📡 Truy cập từ iPhone:</p>
+                <p>📡 Truy cập từ bất kỳ thiết bị:</p>
                 <code>{server_url}</code>
-            </div>
-            
-            <div class="qr-section">
-                {generate_qr_svg(server_url)}
-                <p class="qr-label">📱 Quét bằng Camera iPhone</p>
             </div>
         </header>
         
         <nav class="breadcrumb">
             <span>📍</span>
-            <a href="/">🏠 Home</a>
             {self.generate_breadcrumb(path)}
         </nav>
         
@@ -653,7 +659,7 @@ class FileShareHandler(http.server.SimpleHTTPRequestHandler):
         </div>
         
         <div class="upload-section">
-            <h3>📤 Upload file từ iPhone lên Mac</h3>
+            <h3>📤 Upload file từ thiết bị lên Mac</h3>
             <form class="upload-form" method="POST" enctype="multipart/form-data">
                 <div class="file-input-wrapper">
                     <span class="file-input-btn">📎 Chọn file</span>
@@ -665,8 +671,8 @@ class FileShareHandler(http.server.SimpleHTTPRequestHandler):
         </div>
         
         <footer class="footer">
-            <p>💡 Đảm bảo Mac và iPhone cùng kết nối WiFi</p>
-            <p>Made with ❤️ by AI Assistant</p>
+            <p>💡 Đảm bảo Mac và thiết bị khác cùng kết nối WiFi</p>
+            <p>Made with ❤️ by Phong Tran | <a href="mailto:mr.yutran@gmail.com" style="color: #00d9a5;">mr.yutran@gmail.com</a></p>
         </footer>
     </div>
     
@@ -680,6 +686,36 @@ class FileShareHandler(http.server.SimpleHTTPRequestHandler):
                 display.textContent = 'Chưa chọn file nào';
                 display.style.color = 'rgba(255, 255, 255, 0.7)';
             }
+        }
+        
+        function copyToClipboard(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(function() {
+                    alert('✅ Đã sao chép URL vào clipboard!');
+                }, function(err) {
+                    fallbackCopyTextToClipboard(text);
+                });
+            } else {
+                fallbackCopyTextToClipboard(text);
+            }
+        }
+        
+        function fallbackCopyTextToClipboard(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-999999px";
+            textArea.style.top = "-999999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                alert('✅ Đã sao chép URL vào clipboard!');
+            } catch (err) {
+                alert('❌ Không thể sao chép. Vui lòng chọn và copy thủ công: ' + text);
+            }
+            document.body.removeChild(textArea);
         }
     </script>
 </body>
@@ -695,63 +731,137 @@ class FileShareHandler(http.server.SimpleHTTPRequestHandler):
     
     def generate_breadcrumb(self, path):
         """Tạo breadcrumb navigation"""
-        if path == '/':
-            return ''
+        if path == '/' or path == '':
+            return '<span class="current-path">Home</span>'
         
         parts = path.strip('/').split('/')
-        breadcrumb = ''
+        breadcrumb = '<a href="/">Home</a>'
         current_path = ''
         
         for part in parts:
             current_path += '/' + part
-            breadcrumb += f' <span>›</span> <a href="{current_path}">{html.escape(part)}</a>'
+            if current_path == path:
+                # Last item - current location
+                breadcrumb += f' <span>›</span> <span class="current-path">{html.escape(part)}</span>'
+            else:
+                breadcrumb += f' <span>›</span> <a href="{current_path}">{html.escape(part)}</a>'
         
         return breadcrumb
+    
+    def send_error(self, code, message=None, explain=None):
+        """Override send_error to handle UTF-8 encoding properly"""
+        import html
+        
+        # Keep the original message for the body
+        original_message = message
+        
+        # Set default message if none provided
+        if message is None:
+            if code in self.responses:
+                message = self.responses[code][0]
+            else:
+                message = ''
+        
+        # For status line, use ASCII version
+        ascii_message = message
+        try:
+            message.encode('ascii')
+        except UnicodeEncodeError:
+            ascii_message = 'Error'  # Fallback to ASCII
+        
+        # Send response line with ASCII message
+        self.send_response_only(code, ascii_message)
+        
+        # Send headers
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Connection', 'close')
+        self.end_headers()
+        
+        # Send HTML body with proper encoding
+        content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <title>{code} {html.escape(original_message or message)}</title>
+    <meta charset="utf-8">
+</head>
+<body>
+    <h1>{code} {html.escape(original_message or message)}</h1>
+    {f"<p>{html.escape(explain)}</p>" if explain else ""}
+    <hr>
+    <address>{self.version_string()}</address>
+</body>
+</html>'''
+        
+        self.wfile.write(content.encode('utf-8'))
     
     def log_message(self, format, *args):
         """Custom log format"""
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {args[0]}")
 
 
+def generate_simple_qr_ascii(url):
+    """Generate simple ASCII QR code for terminal"""
+    # Create simple text art for QR code
+    qr_art = f"""
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║                    📱 MAC FILE SHARE                         ║
+║                                                              ║
+║  🌐 URL: {url:<50} ║
+║                                                              ║
+║  📋 How to access:                                           ║
+║     1. Open browser on any device                          ║
+║     2. Type the URL above into browser address bar          ║
+║                                                              ║
+║  💡 Or copy and paste the URL: {url:<29} ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+"""
+    return qr_art
+
 def main():
     global SHARE_DIR, PORT
     
-    # Xử lý arguments
+    # Process arguments
     if len(sys.argv) > 1:
         custom_dir = os.path.expanduser(sys.argv[1])
         if os.path.isdir(custom_dir):
             SHARE_DIR = custom_dir
         else:
-            print(f"❌ Thư mục không tồn tại: {sys.argv[1]}")
+            print(f"❌ Directory does not exist: {sys.argv[1]}")
             sys.exit(1)
     
     if len(sys.argv) > 2:
         try:
             PORT = int(sys.argv[2])
         except ValueError:
-            print("❌ Port không hợp lệ")
+            print("❌ Invalid port")
             sys.exit(1)
     
-    # Lấy IP
+    # Get IP
     local_ip = get_local_ip()
+    server_url = f"http://{local_ip}:{PORT}"
     
     # Banner
-    print("\n" + "="*60)
-    print("  🍎 MAC FILE SHARE - Chia sẻ file từ Mac sang iPhone")
-    print("="*60)
-    print(f"\n  📁 Thư mục chia sẻ: {SHARE_DIR}")
-    print(f"\n  🌐 Truy cập từ iPhone:")
-    print(f"     http://{local_ip}:{PORT}")
-    print(f"\n  💡 Mở Camera iPhone và quét QR code trên trang web")
-    print(f"\n  ⏹️  Nhấn Ctrl+C để dừng server")
-    print("\n" + "="*60 + "\n")
+    print("\n" + "="*70)
+    print("  🍎 MAC FILE SHARE - Share files across devices")
+    print("="*70)
+    print(f"\n  📁 Share directory: {SHARE_DIR}")
+    print(f"\n  🌐 Access URL: {server_url}")
     
-    # Khởi động server
+    # Display QR code ASCII
+    print(f"\n{generate_simple_qr_ascii(server_url)}")
+    
+    print(f"  💡 Open browser on any device and enter the URL above")
+    print(f"\n  ⏹️  Press Ctrl+C to stop server")
+    print("\n" + "="*70 + "\n")
+    
+    # Start server
     with socketserver.TCPServer(("", PORT), FileShareHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\n\n👋 Đã dừng server. Tạm biệt!")
+            print("\n\n👋 Server stopped. Goodbye!")
             sys.exit(0)
 
 
